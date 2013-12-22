@@ -25,23 +25,23 @@
       (.replace "," "%2C")
       (.replace ":" "%3A")))
 
-(defn encode-signature
+(defn encode-signature  ;;TODO why this is necessary?
   "Change the signature to encode plus and equal signs"
   [value]
     (-> value
       (.replace "+" "%2B")
       (.replace "=" "%3D")))
 
-(defn map-to-uri
+(defn qmap->qstring
   "Transform map to encoded URI string"
-  ([uri-map]
-     (apply str
-            (interpose
-             "&"
-             (for [[k v] (sort uri-map)] (str
-                                          (encodeRfc3986 (name k))
-                                          "="
-                                          (encodeRfc3986 v)))))))
+  [uri-map]
+  (apply str
+         (interpose
+          "&"
+          (for [[k v] (sort uri-map)] (str
+                                       (encodeRfc3986 (name k))
+                                       "="
+                                       (encodeRfc3986 v))))))
 
 (defn get-timestamp
   "Get formatted timestamp for current time"
@@ -63,33 +63,74 @@
         encoder (new Base64)]
     (new String (.encode encoder rawHmac))))
 
-(defn make-request
+(defn build-request ;TODO orgainze request generic, API and merchant
   "Create an encoded and signed URL request for the MWS API"
-  [domain access-key secret assoc-tag params]
-  (let [uri (map-to-uri (conj params {:Service "AWSECommerceService"
-                                      :AWSAccessKeyId access-key
-                                      :AssociateTag assoc-tag
-                                      :Timestamp (get-timestamp)}))
-        signature (encode-signature
-                   (sign
-                    (str "GET\n" domain "/\n" uri) secret))]
-    (str "http://" domain "/?" uri "&Signature=" signature)))
+  [domain
+   marketplace-id
+   access-key
+   secret-key
+   seller-id
+   params]
+  (let [http-verb "GET"
+        host-header domain ;TODO remove?
+        request-uri "/Orders/2011-01-01"
+        query-string (qmap->qstring (conj params
+                                          {:AWSAccessKeyId access-key
+                                           :SellerId seller-id
+                                           :SignatureMethod "HmacSHA256"
+                                           :SignatureVersion "2"
+                                           :Timestamp (get-timestamp)
+                                           :Version "2011-01-01"}))
+        signature (encode-signature (sign (str
+                                           http-verb "\n"
+                                           host-header "\n"
+                                           request-uri "\n"
+                                           query-string)
+                                          secret-key))
+        request-string (str
+                        "https://"
+                        host-header
+                        request-uri
+                        "?"
+                        query-string
+                        "&Signature=" signature)]
+    request-string))
 
-(defn print-request
+(defn submit-request
   []
   (let [domain "mws.amazonservices.com"
-        access-key "enter-your-amazon-access-key"
-        secret-key "enter-your-amazon-secret-key"
-        associate-id "enter-your-amazon-associate-key"]
-    ;; (http/get
-    (println (make-request
-                 domain
-                 access-key
-                 secret-key
-                 associate-id
-                 {:Operation "ItemLookup", :ItemId "0679722769"}))))
+        marketplace-id "ATVPDKIKX0DER"
+        access-key "AKIAIZUW23CYRGDJ3CHQ"
+        secret-key "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"
+        seller-id "A24TT5ZXHOK2T8"]
+    (http/get (build-request
+              domain
+              marketplace-id
+              access-key
+              secret-key
+              seller-id
+              {:Action "GetServiceStatus"}))))
+
 
 (defn -main
   "I don't do a whole lot ... yet."
   [& args]
   (println "Hello, World!"))
+
+
+(comment
+  (defn make-config []
+  (hash-map
+    :accessKeyId "AKIAIZUW23CYRGDJ3CHQ"
+    :secretAccessKey "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"
+    :applicationName "reportspark-mwsclient"
+    :applicationVersion "0.1.0-SNAPSHOT"
+    :sellerId "A24TT5ZXHOK2T8"
+    :marketplaceId "ATVPDKIKX0DER"
+    :marketplaceIdList (doto
+                         (MarketplaceIdList.) 
+                         (.setId ["ATVPDKIKX0DER"]))
+    :config (doto 
+               (MarketplaceWebServiceOrdersConfig.)
+              (.setServiceURL
+               "https://mws.amazonservices.com/Orders/2011-01-01")))))
