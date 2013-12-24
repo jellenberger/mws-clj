@@ -1,5 +1,7 @@
 (ns sparky.core
-  (:require [clj-http.client :as http])
+  (:require [org.httpkit.client :as http]
+            [clojure.xml :as xml])
+  (:use clojure.pprint) ; TODO for dev only
   (:import
    java.net.URLEncoder
    java.util.Calendar
@@ -10,9 +12,12 @@
    org.apache.commons.codec.binary.Base64)
   (:gen-class))
 
-
 (def UTF8_CHARSET  "UTF-8")
 (def HMAC_SHA256_ALGORITHM "HmacSHA256")
+
+(defn parse-XML-string
+  [s]
+  (xml/parse (java.io.ByteArrayInputStream. (.getBytes s))))
 
 (defn encodeRfc3986
   "Encode a string to RFC3986."
@@ -25,7 +30,7 @@
       (.replace "," "%2C")
       (.replace ":" "%3A")))
 
-(defn encode-signature  ;;TODO why this is necessary?
+(defn encode-signature  ; TODO why this is necessary?
   "Change the signature to encode plus and equal signs"
   [value]
     (-> value
@@ -63,7 +68,7 @@
         encoder (new Base64)]
     (new String (.encode encoder rawHmac))))
 
-(defn build-request ;TODO orgainze request generic, API and merchant
+(defn build-request ; TODO orgainze request generic, API and merchant
   "Create an encoded and signed URL request for the MWS API"
   [domain
    marketplace-id
@@ -72,7 +77,7 @@
    seller-id
    params]
   (let [http-verb "GET"
-        host-header domain ;TODO remove?
+        host-header domain ;TODO duplicate var: clean up
         request-uri "/Orders/2011-01-01"
         query-string (qmap->qstring (conj params
                                           {:AWSAccessKeyId access-key
@@ -103,34 +108,17 @@
         access-key "AKIAIZUW23CYRGDJ3CHQ"
         secret-key "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"
         seller-id "A24TT5ZXHOK2T8"]
-    (http/get (build-request
-              domain
-              marketplace-id
-              access-key
-              secret-key
-              seller-id
-              {:Action "GetServiceStatus"}))))
+    @(http/get (build-request ; synchronous, requires deref
+                domain
+                marketplace-id
+                access-key
+                secret-key
+                seller-id
+                {:Action "GetServiceStatus"})
+               {:user-agent "Sparky/0.1 (Testing; Clojure)"})))
 
 
 (defn -main
   "I don't do a whole lot ... yet."
   [& args]
   (println "Hello, World!"))
-
-
-(comment
-  (defn make-config []
-  (hash-map
-    :accessKeyId "AKIAIZUW23CYRGDJ3CHQ"
-    :secretAccessKey "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"
-    :applicationName "reportspark-mwsclient"
-    :applicationVersion "0.1.0-SNAPSHOT"
-    :sellerId "A24TT5ZXHOK2T8"
-    :marketplaceId "ATVPDKIKX0DER"
-    :marketplaceIdList (doto
-                         (MarketplaceIdList.) 
-                         (.setId ["ATVPDKIKX0DER"]))
-    :config (doto 
-               (MarketplaceWebServiceOrdersConfig.)
-              (.setServiceURL
-               "https://mws.amazonservices.com/Orders/2011-01-01")))))
