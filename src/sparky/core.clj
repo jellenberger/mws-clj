@@ -20,17 +20,21 @@
 (def REQUEST_METHOD "POST")
 (def USER_AGENT_STRING "Sparky/1.0.1 (Language=Clojure/1.5)")
 
+(def pt-id "A2TKMPXX6CQRJI")
+(def br-id "A24TT5ZXHOK2T8")
 
-;; Utility functions ***************************q************
+
+;; Utility functions
 
 (defn parse-xml
   "Parses an XML string."
   [s] (xml/parse (ByteArrayInputStream. (.getBytes s UTF8_CHARSET))))
 
-(defn save-text-inputstream
+(defn read-text-inputstream
+  "Reads a text file input stream, returning a vector of lines."
   [stream]
-  (with-open [rdr (io/reader stream)]
-    (reduce conj [] (line-seq rdr))))
+  (with-open [rdr (io/reader stream :encoding UTF8_CHARSET)]
+    (vec (line-seq rdr))))
 
 (defn encodeRfc3986
   "Encodes a string to RFC3986."
