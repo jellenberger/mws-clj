@@ -1,5 +1,6 @@
 (ns sparky.core
-  (:require [clojure.string :as string]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as string]
             [org.httpkit.client :as http]
             [clojure.xml :as xml])
   (:use clojure.pprint) ; used for dev only
@@ -17,14 +18,19 @@
 (def UTF8_CHARSET  "UTF-8")
 (def HMAC_SHA256_ALGORITHM "HmacSHA256")
 (def REQUEST_METHOD "POST")
-(def USER_AGENT_STRING "Sparky/1.0.1 (Testing)")
+(def USER_AGENT_STRING "Sparky/1.0.1 (Language=Clojure/1.5)")
 
 
-;; Utility functions ***************************************
+;; Utility functions ***************************q************
 
 (defn parse-xml
   "Parses an XML string."
   [s] (xml/parse (ByteArrayInputStream. (.getBytes s UTF8_CHARSET))))
+
+(defn save-text-inputstream
+  [stream]
+  (with-open [rdr (io/reader stream)]
+    (reduce conj [] (line-seq rdr))))
 
 (defn encodeRfc3986
   "Encodes a string to RFC3986."
@@ -66,7 +72,6 @@
     (encodeRfc3986 (new String (.encode encoder rawHmac)))))
 
 
-
 ;; API request-building functions *****************************************
 
 (defn gen-request
@@ -78,27 +83,29 @@
         {:keys [request-path
                 service-version
                 request-params]} api-params
-        query-string (-> (conj request-params
-                               {:AWSAccessKeyId access-key
-                                :SellerId merchant-id
-                                :SignatureMethod "HmacSHA256"
-                                :SignatureVersion "2"
-                                :Timestamp (gen-timestamp)
-                                :Version service-version})
-                         qmap->string)
-        signature (-> (string/join "\n" ["GET"
-                                         service-host
-                                         request-path
-                                         query-string])
-                      (sign secret-key))
-        request-string (str "https://"
-                            service-host
-                            request-path
-                            "?"
-                            query-string
-                            "&Signature="
-                            signature)]
+        query-string (qmap->string (conj request-params
+                                         {:AWSAccessKeyId access-key
+                                          :SellerId merchant-id
+                                          :SignatureMethod "HmacSHA256"
+                                          :SignatureVersion "2"
+                                          :Timestamp (gen-timestamp)
+                                          :Version service-version}))
+        signature (sign (string/join "\n" ["GET"
+                                           service-host
+                                           request-path
+                                           query-string])
+                        secret-key)
+        request-string (str "https://" service-host request-path "?"
+                            query-string "&Signature=" signature)]
     request-string))
+
+(defn gen-reports-request
+  [merchant-id]
+  (gen-request merchant-id
+               {:request-path "/"
+                :service-version "2009-01-01"
+                :request-params {:Action "GetReport"
+                                 :ReportId "14187220383"}}))
 
 (defn gen-orders-request
   [merchant-id]
@@ -113,6 +120,8 @@
                {:request-path "/Products/2011-10-01"
                 :service-version "2011-10-01"
                 :request-params {:Action "GetServiceStatus"}}))
+
+
 
 (defn fetch-request
   [request-string]
