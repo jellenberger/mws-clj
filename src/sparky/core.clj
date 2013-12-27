@@ -1,13 +1,14 @@
 (ns sparky.core
-  (:require [org.httpkit.client :as http]
+  (:require [clojure.string :as string]
+            [org.httpkit.client :as http]
             [clojure.xml :as xml])
   (:use clojure.pprint) ; used for dev only
   (:import
    java.io.ByteArrayInputStream
    java.net.URLEncoder
+   java.text.SimpleDateFormat
    java.util.Calendar
    java.util.TimeZone
-   java.text.SimpleDateFormat
    javax.crypto.spec.SecretKeySpec
    javax.crypto.Mac
    org.apache.commons.codec.binary.Base64)
@@ -15,13 +16,18 @@
 
 (def UTF8_CHARSET  "UTF-8")
 (def HMAC_SHA256_ALGORITHM "HmacSHA256")
+(def REQUEST_METHOD "POST")
+(def USER_AGENT_STRING "Sparky/1.0.1 (Testing)")
 
-(defn parse-XML
-  [s]
-  (xml/parse (ByteArrayInputStream. (.getBytes s))))
+
+;; Utility functions ***************************************
+
+(defn parse-xml
+  "Parses an XML string."
+  [s] (xml/parse (ByteArrayInputStream. (.getBytes s UTF8_CHARSET))))
 
 (defn encodeRfc3986
-  "Encode a string to RFC3986."
+  "Encodes a string to RFC3986."
   [s]
   (-> s
       (URLEncoder/encode)
@@ -31,85 +37,90 @@
       (.replace "," "%2C")
       (.replace ":" "%3A")))
 
-(defn qmap->qstring
-  "Transform map to encoded URI string"
-  [uri-map]
-  (apply str
-         (interpose
-          "&"
-          (for [[k v] (sort uri-map)] (str
-                                       (encodeRfc3986 (name k))
-                                       "="
-                                       (encodeRfc3986 v))))))
+(defn qmap->string
+  "Converts a map of query parameters to a sorted RFC3986 encoded string."
+  [q-map]
+  (string/join
+   "&"
+   (for [[k v] (sort q-map)]
+     (str (encodeRfc3986 (name k)) "=" (encodeRfc3986 v)))))
 
-(defn get-timestamp
-  "Get formatted timestamp for current time"
+(defn gen-timestamp
+  "Generates an ISO8601 timestamp."
   []
-  (let [cal (Calendar/getInstance)
-        dfm (new SimpleDateFormat "yyyy-MM-dd'T'HH:mm:ss'Z'")
-        void (.setTimeZone dfm (TimeZone/getTimeZone  "GMT"))]
-    (.format dfm (.getTime cal))))
+  (.format
+   (doto (SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'")
+     (.setTimeZone (TimeZone/getTimeZone "GMT")))
+   (.getTime (Calendar/getInstance))))
 
 (defn sign
-  "Create the signature for the request string"
-  [string-to-sign secret]
+  "Generates a signature for a string, given a secret key."
+  [s secret]
   (let [secretKeyBytes (.getBytes secret UTF8_CHARSET)
         secretKeySpec (new SecretKeySpec secretKeyBytes HMAC_SHA256_ALGORITHM)
-        mac (Mac/getInstance HMAC_SHA256_ALGORITHM)
-        void (.init mac secretKeySpec)
-        data (.getBytes string-to-sign UTF8_CHARSET)
-        rawHmac (.doFinal mac data)
+        mac (doto (Mac/getInstance HMAC_SHA256_ALGORITHM)
+              (.init secretKeySpec))
+        sbytes (.getBytes s UTF8_CHARSET)
+        rawHmac (.doFinal mac sbytes)
         encoder (new Base64)]
     (encodeRfc3986 (new String (.encode encoder rawHmac)))))
 
-(defn build-request ; TODO modularize request process by api, merchant
-  "Create an encoded and signed URL request for the MWS API"
-  [domain
-   marketplace-id
-   access-key
-   secret-key
-   seller-id
-   params]
-  (let [http-verb "POST"
-        host-header domain ;TODO duplicate var: clean up
-        request-uri "/Orders/2011-01-01"
-        query-string (qmap->qstring (conj params
-                                          {:AWSAccessKeyId access-key
-                                           :SellerId seller-id
-                                           :SignatureMethod "HmacSHA256"
-                                           :SignatureVersion "2"
-                                           :Timestamp (get-timestamp)
-                                           :Version "2011-01-01"}))
-        signature (sign (str http-verb "\n"
-                             host-header "\n"
-                             request-uri "\n"
-                             query-string)
-                        secret-key)
+
+
+;; API request-building functions *****************************************
+
+(defn gen-request
+  [merchant-id api-params]
+  (let [access-key "AKIAIZUW23CYRGDJ3CHQ"
+        secret-key "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"
+        marketplace-id "ATVPDKIKX0DER"
+        service-host "mws.amazonservices.com"
+        {:keys [request-path
+                service-version
+                request-params]} api-params
+        query-string (-> (conj request-params
+                               {:AWSAccessKeyId access-key
+                                :SellerId merchant-id
+                                :SignatureMethod "HmacSHA256"
+                                :SignatureVersion "2"
+                                :Timestamp (gen-timestamp)
+                                :Version service-version})
+                         qmap->string)
+        signature (-> (string/join "\n" ["GET"
+                                         service-host
+                                         request-path
+                                         query-string])
+                      (sign secret-key))
         request-string (str "https://"
-                            host-header
-                            request-uri
+                            service-host
+                            request-path
                             "?"
                             query-string
                             "&Signature="
                             signature)]
     request-string))
 
-(defn submit-request
-  []
-  (let [domain "mws.amazonservices.com"
-        marketplace-id "ATVPDKIKX0DER"
-        access-key "AKIAIZUW23CYRGDJ3CHQ"
-        secret-key "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"
-        seller-id "A24TT5ZXHOK2T8"]
-    @(http/post (build-request ; synchronous, requires deref
-                domain
-                marketplace-id
-                access-key
-                secret-key
-                seller-id
-                {:Action "GetServiceStatus"})
-               {:user-agent "Sparky/0.1 (Testing; Clojure)"})))
+(defn gen-orders-request
+  [merchant-id]
+  (gen-request merchant-id
+               {:request-path "/Orders/2011-01-01"
+                :service-version "2011-01-01"
+                :request-params {:Action "GetServiceStatus"}}))
 
+(defn gen-products-request
+  [merchant-id]
+  (gen-request merchant-id
+               {:request-path "/Products/2011-10-01"
+                :service-version "2011-10-01"
+                :request-params {:Action "GetServiceStatus"}}))
+
+(defn fetch-request
+  [request-string]
+  @(http/get request-string {:user-agent USER_AGENT_STRING}))
+
+
+
+; Main function *************************************************
 
 (defn -main
   "I don't do a whole lot ... yet."
