@@ -18,7 +18,7 @@
 (def UTF8_CHARSET  "UTF-8")
 (def HMAC_SHA256_ALGORITHM "HmacSHA256")
 (def REQUEST_METHOD "POST")
-(def USER_AGENT_STRING "Sparky/1.0.1 (Language=Clojure/1.5)")
+(def USER_AGENT_STRING "Sparky/0.1.0 (Language=Clojure/1.5)")
 
 (def pt-id "A2TKMPXX6CQRJI")
 (def br-id "A24TT5ZXHOK2T8")
@@ -47,13 +47,11 @@
       (.replace "," "%2C")
       (.replace ":" "%3A")))
 
-(defn qmap->string
+(defn qmap->qstring
   "Converts a map of query parameters to a sorted RFC3986 encoded string."
   [q-map]
-  (string/join
-   "&"
-   (for [[k v] (sort q-map)]
-     (str (encodeRfc3986 (name k)) "=" (encodeRfc3986 v)))))
+  (string/join "&" (for [[k v] (sort q-map)]
+                     (str (encodeRfc3986 (name k)) "=" (encodeRfc3986 v)))))
 
 (defn gen-timestamp
   "Generates an ISO8601 timestamp."
@@ -76,7 +74,7 @@
     (encodeRfc3986 (new String (.encode encoder rawHmac)))))
 
 
-;; API request-building functions *****************************************
+;; Generic API request functions *****************************
 
 (defn gen-request
   [merchant-id api-params]
@@ -87,13 +85,14 @@
         {:keys [request-path
                 service-version
                 request-params]} api-params
-        query-string (qmap->string (conj request-params
-                                         {:AWSAccessKeyId access-key
-                                          :SellerId merchant-id
-                                          :SignatureMethod "HmacSHA256"
-                                          :SignatureVersion "2"
-                                          :Timestamp (gen-timestamp)
-                                          :Version service-version}))
+        query-map (conj request-params
+                        {:AWSAccessKeyId access-key
+                         :SellerId merchant-id
+                         :SignatureMethod "HmacSHA256"
+                         :SignatureVersion "2"
+                         :Timestamp (gen-timestamp)
+                         :Version service-version})
+        query-string (qmap->qstring query-map)
         signature (sign (string/join "\n" ["GET"
                                            service-host
                                            request-path
@@ -103,37 +102,49 @@
                             query-string "&Signature=" signature)]
     request-string))
 
-(defn gen-reports-request
-  [merchant-id]
-  (gen-request merchant-id
-               {:request-path "/"
-                :service-version "2009-01-01"
-                :request-params {:Action "GetReport"
-                                 :ReportId "14187220383"}}))
-
-(defn gen-orders-request
-  [merchant-id]
-  (gen-request merchant-id
-               {:request-path "/Orders/2011-01-01"
-                :service-version "2011-01-01"
-                :request-params {:Action "GetServiceStatus"}}))
-
-(defn gen-products-request
-  [merchant-id]
-  (gen-request merchant-id
-               {:request-path "/Products/2011-10-01"
-                :service-version "2011-10-01"
-                :request-params {:Action "GetServiceStatus"}}))
-
-
-
-(defn fetch-request
+(defn submit-request
   [request-string]
   @(http/get request-string {:user-agent USER_AGENT_STRING}))
 
+(defn reports-request
+  [merchant-id params]
+  (let [request-string (gen-request merchant-id
+                                    {:request-path "/"
+                                     :service-version "2009-01-01"
+                                     :request-params params})]
+    (submit-request request-string)))
+
+(defn orders-request
+  [merchant-id params]
+  (let [request-string (gen-request merchant-id
+                                    {:request-path "/Orders/2011-01-01"
+                                     :service-version "2011-01-01"
+                                     :request-params params})]
+    (submit-request request-string)))
+
+(defn products-request
+  [merchant-id params]
+  (let [request-string (gen-request merchant-id
+                                    {:request-path "/Products/2011-10-01"
+                                     :service-version "2011-10-01"
+                                     :request-params params})]
+    (submit-request request-string)))
 
 
-; Main function *************************************************
+;; Specific API request functions *****************************
+
+(defn get-reportlist
+  [merchant-id]
+  (let [resp (reports-request merchant-id {:Action "GetReportList"})
+        xml (parse-xml (:body resp))
+        report-id #(-> % :content (nth 0) :content first)
+        report-type #(-> % :content (nth 1) :content first)
+        report-date #(-> % :content (nth 3) :content first)]
+    (for [r (xml-seq xml) :when (= (:tag r) :ReportInfo)]
+      [(report-id r) (report-type r) (report-date r)])))
+
+
+;; Main function ********************************************
 
 (defn -main
   "I don't do a whole lot ... yet."
