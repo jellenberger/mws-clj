@@ -106,6 +106,9 @@
   [request-string]
   @(http/get request-string {:user-agent USER_AGENT_STRING}))
 
+
+;; Report API functions *****************************
+
 (defn reports-request
   [merchant-id params]
   (let [request-string (gen-request merchant-id
@@ -114,13 +117,27 @@
                                      :request-params params})]
     (submit-request request-string)))
 
-(defn orders-request
-  [merchant-id params]
-  (let [request-string (gen-request merchant-id
-                                    {:request-path "/Orders/2011-01-01"
-                                     :service-version "2011-01-01"
-                                     :request-params params})]
-    (submit-request request-string)))
+(defn get-reportlist
+  [merchant-id]
+  (reports-request merchant-id {:Action "GetReportList"
+                                :MaxCount "100"}))
+
+(defn parse-reportlist
+  [body]
+  (let [xml (parse-xml body)
+        report-id #(-> % :content (nth 0) :content first)
+        report-type #(-> % :content (nth 1) :content first)
+        report-date #(-> % :content (nth 3) :content first)]
+    (for [r (xml-seq xml) :when (= (:tag r) :ReportInfo)]
+      [(report-id r) (report-type r) (report-date r)])))
+
+(defn get-report
+  [merchant-id report-id]
+  (reports-request merchant-id {:Action "GetReport"
+                                :ReportId report-id}))
+
+
+;; Product API functions **********************************
 
 (defn products-request
   [merchant-id params]
@@ -130,18 +147,11 @@
                                      :request-params params})]
     (submit-request request-string)))
 
-
-;; Specific API request functions *****************************
-
-(defn get-reportlist
-  [merchant-id]
-  (let [resp (reports-request merchant-id {:Action "GetReportList"})
-        xml (parse-xml (:body resp))
-        report-id #(-> % :content (nth 0) :content first)
-        report-type #(-> % :content (nth 1) :content first)
-        report-date #(-> % :content (nth 3) :content first)]
-    (for [r (xml-seq xml) :when (= (:tag r) :ReportInfo)]
-      [(report-id r) (report-type r) (report-date r)])))
+(defn get-matching-product
+  [merchant-id asin]
+  (products-request merchant-id {:Action "GetMatchingProduct"
+                                 :ASINList.ASIN.1 asin
+                                 :MarketplaceId "ATVPDKIKX0DER"}))
 
 
 ;; Main function ********************************************
