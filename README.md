@@ -1,36 +1,7 @@
-# sparky
+# mws-clj
 
-FIXME: description
+My initial experiments using Clojure to access Amazon's [merchant web services API](https://developer.amazonservices.com ). Although it was promising, for various reasons we ended up using a private (sorry) fork of [czpython/python-amazon-mws](https://github.com/czpython/python-amazon-mws).
 
-## Installation
+## Status
 
-Download from http://example.com/FIXME.
-
-## Usage
-
-FIXME: explanation
-
-    $ java -jar sparky-0.1.0-standalone.jar [args]
-
-## Options
-
-FIXME: listing of options this app accepts.
-
-## Examples
-
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
-
-## License
-
-Copyright © 2013 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+The code dates back to 2013 and in its current form runs only in the REPL with hard-coded keys, merchant ids, etc., but it might be a useful starting point.
