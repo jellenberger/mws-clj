@@ -1,6 +1,6 @@
 # mws-clj
 
-My initial experiments using Clojure to access Amazon's [merchant web services API](https://developer.amazonservices.com ). Although it was promising, for various reasons we ended up using a private (sorry) fork of [czpython/python-amazon-mws](https://github.com/czpython/python-amazon-mws).
+My initial experiments using Clojure to access Amazon's [merchant web services API](https://developer.amazonservices.com ). Although it was promising, for various reasons we ended up forking [czpython/python-amazon-mws](https://github.com/czpython/python-amazon-mws).
 
 ## Status
 
